@@ -3,7 +3,7 @@
 
 Name: python-linux-procfs
 Version: 0.4.9
-Release: 4%{?dist}
+Release: 5%{?dist}
 License: GPLv2
 Summary: Linux /proc abstraction classes
 Group: System Environment/Libraries
@@ -14,6 +14,7 @@ BuildRequires: python-devel
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 Patch1: pidstats-fix-documentation-indentation.patch
+Patch2: fix-parse_affinity-for-CPU-numbers-greater-than-31.patch
 
 %description
 Abstractions to extract information from the Linux kernel /proc files.
@@ -21,6 +22,7 @@ Abstractions to extract information from the Linux kernel /proc files.
 %prep
 %setup -q
 %patch1 -p1
+%patch2 -p1
 
 %build
 %{__python} setup.py build
@@ -45,6 +47,10 @@ rm -rf %{buildroot}
 %doc COPYING
 
 %changelog
+* Mon Sep 12 2016 John Kacur <jkacur@gmail.com> - 0.4.9-5
+- fix parse_affinity for CPU numbers greater than 31
+Resolves: rhbz#1374804
+
 * Fri Mar 11 2016 John Kacur <jkacur@gmail.com> - 0.4.9-4
 - Add specfile changes to install pflags (utility to print processor flags)
 Resolves: rhbz#1255725
