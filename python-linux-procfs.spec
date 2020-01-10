@@ -2,8 +2,8 @@
 %{!?python_ver: %define python_ver %(%{__python} -c "import sys ; print sys.version[:3]")}
 
 Name: python-linux-procfs
-Version: 0.4.6
-Release: 3%{?dist}
+Version: 0.4.9
+Release: 4%{?dist}
 License: GPLv2
 Summary: Linux /proc abstraction classes
 Group: System Environment/Libraries
@@ -13,11 +13,14 @@ BuildArch: noarch
 BuildRequires: python-devel
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
+Patch1: pidstats-fix-documentation-indentation.patch
+
 %description
 Abstractions to extract information from the Linux kernel /proc files.
 
 %prep
 %setup -q
+%patch1 -p1
 
 %build
 %{__python} setup.py build
@@ -25,12 +28,15 @@ Abstractions to extract information from the Linux kernel /proc files.
 %install
 rm -rf %{buildroot}
 %{__python} setup.py install --skip-build --root %{buildroot}
+mkdir -p %{buildroot}%{_bindir}
+install -p -m755 pflags-cmd.py %{buildroot}%{_bindir}/pflags
 
 %clean
 rm -rf %{buildroot}
 
 %files
 %defattr(0755,root,root,0755)
+%{_bindir}/pflags
 %{python_sitelib}/procfs/
 %defattr(0644,root,root,0755)
 %if "%{python_ver}" >= "2.5"
@@ -39,9 +45,40 @@ rm -rf %{buildroot}
 %doc COPYING
 
 %changelog
+* Fri Mar 11 2016 John Kacur <jkacur@gmail.com> - 0.4.9-4
+- Add specfile changes to install pflags (utility to print processor flags)
+Resolves: rhbz#1255725
+
+* Wed Nov 11 2015 John Kacur <jkacur@redhat.com> - 0.4.9-3
+- pidstats-fix-documentation-indentation
+Resolves: rhbz#1065076
+
+* Fri Nov 06 2015 John Kacur <jkacur@redhat.com> - 0.4.9-2
+- Update to upstream version 0.4.9
+Resolves: rhbz#1255725
+
+* Thu Oct  8 2015 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.9-1
+- Adds documentations to classes, more work to do on methods
+- Fixes parsing of users in /proc/interrupts users field
+- Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1245677
+
+* Tue Jun 23 2015 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.8-1
+- Support spaces in COMM names
+- Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1232394
+
+* Thu Jun 11 2015 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.7-1
+- Fix pidstat.process_flag()
+- Introduce pflags utility
+- Parse IRQ affinities for !root
+- Add PF_NO_SETAFFINITY const
+
 * Tue Sep 2 2014 John Kacur <jkacur@redhat.com> - 0.4.6-3
 - Rebased to python-linux-procfs-0.4.6
 - Resolves: rhbz#1133700
+
+* Wed Jun  5 2013 Jiri Kastner <jkastner@redhat.com> - 0.4.6-1
+- support for parsing cgroups
+- support for parsing environ variables
 
 * Mon Oct 1 2012 John Kacur <jkacur@redhat.com> - 0.4.5-2
 - Rebuilt for rhel6.4
@@ -50,7 +87,7 @@ rm -rf %{buildroot}
 * Mon May 10 2010 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.5-1
 - Fix https://bugzilla.redhat.com/show_bug.cgi?id=577365
 
-* Mon Feb 10 2009 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.4-1
+* Tue Feb 10 2009 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.4-1
 - Even more fixes due to the fedora review process
 
 * Mon Feb  9 2009 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.3-1
