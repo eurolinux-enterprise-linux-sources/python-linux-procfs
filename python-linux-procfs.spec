@@ -2,8 +2,8 @@
 %{!?python_ver: %define python_ver %(%{__python} -c "import sys ; print sys.version[:3]")}
 
 Name: python-linux-procfs
-Version: 0.4.5
-Release: 2%{?dist}
+Version: 0.4.6
+Release: 3%{?dist}
 License: GPLv2
 Summary: Linux /proc abstraction classes
 Group: System Environment/Libraries
@@ -39,6 +39,10 @@ rm -rf %{buildroot}
 %doc COPYING
 
 %changelog
+* Tue Sep 2 2014 John Kacur <jkacur@redhat.com> - 0.4.6-3
+- Rebased to python-linux-procfs-0.4.6
+- Resolves: rhbz#1133700
+
 * Mon Oct 1 2012 John Kacur <jkacur@redhat.com> - 0.4.5-2
 - Rebuilt for rhel6.4
 - Resolves: rhbz#858814
