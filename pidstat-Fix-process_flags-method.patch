@@ -1,0 +1,30 @@
+From ade62416612d7f9de610602a4ccc5210e09b34b9 Mon Sep 17 00:00:00 2001
+From: Arnaldo Carvalho de Melo <acme@redhat.com>
+Date: Thu, 11 Jun 2015 16:20:03 -0300
+Subject: [PATCH 4/7] pidstat: Fix process_flags() method
+
+It was referencing self.flags, that doesn't exists, fix it by making it
+access self.fields["flags"] instead.
+
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+Signed-off-by: John Kacur <jkacur@redhat.com>
+---
+ procfs/procfs.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/procfs/procfs.py b/procfs/procfs.py
+index 2d0e2b043797..f1604ba6ed01 100755
+--- a/procfs/procfs.py
++++ b/procfs/procfs.py
+@@ -115,7 +115,7 @@ class pidstat:
+ 			if attr[:3] != "PF_":
+ 				continue
+ 			value = getattr(self, attr)
+-			if value & self.flags:
++			if value & self.fields["flags"]:
+ 				sflags.append(attr)
+ 
+ 		return sflags
+-- 
+1.8.3.1
+

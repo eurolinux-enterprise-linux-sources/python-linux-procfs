@@ -1,0 +1,60 @@
+From 9361b771ad0b8fe1206469b89fc2eef9d13fe8b2 Mon Sep 17 00:00:00 2001
+From: Arnaldo Carvalho de Melo <acme@redhat.com>
+Date: Wed, 10 Jun 2015 19:44:20 -0300
+Subject: [PATCH 3/7] interrupts: Do not refrain from parsing the irq
+ affinities for !root
+
+I.e. let the OS be the one to decide if access to this file is allowed
+or not, and non root users can see this, at least around 4.1-rc times:
+
+Running: procfs/procfs.py:
+
+  31: {'affinity': [0, 1, 2, 3], 'type': 'PCI-MSI-edge', 'cpu': [178564, 0, 285828, 0], 'users': ['xhci_hcd']}
+  30: {'affinity': [0, 1, 2, 3], 'type': 'PCI-MSI-edge', 'cpu': [342630, 0, 197229, 0], 'users': ['0000:00:1f.2']}
+  35: {'affinity': [0, 1, 2, 3], 'type': 'PCI-MSI-edge', 'cpu': [858, 0, 565, 0], 'users': ['snd_hda_intel']}
+  34: {'affinity': [0, 1, 2, 3], 'type': 'PCI-MSI-edge', 'cpu': [306, 0, 44, 0], 'users': ['thunderbolt']}
+
+And now 'tuna -Q' works for non root users:
+
+  [acme@zoo python-linux-procfs]$ ../tuna/tuna-cmd.py -Q
+     # users            affinity
+     0 timer             0,1,2,3
+     8 rtc0              0,1,2,3
+     9 acpi              0,1,2,3
+    17 17-fasteoi   brcmsmac  0,1,2,3
+    22 22-fasteoi   ehci_hcd:usb4  0,1,2,3
+    23 23-fasteoi   ehci_hcd:usb3  0,1,2,3
+    26 pciehp            0,1,2,3
+    27 pciehp            0,1,2,3
+    28 pciehp            0,1,2,3
+    29 pciehp            0,1,2,3
+    30 0000:00:1f.2      0,1,2,3
+    31 xhci_hcd          0,1,2,3
+    32 i915              0,1,2,3
+    33 mei_me            0,1,2,3
+    34 thunderbolt       0,1,2,3
+    35 snd_hda_intel     0,1,2,3
+  [acme@zoo python-linux-procfs]$
+
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+Signed-off-by: John Kacur <jkacur@redhat.com>
+---
+ procfs/procfs.py | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/procfs/procfs.py b/procfs/procfs.py
+index 4ff7e9804bc9..2d0e2b043797 100755
+--- a/procfs/procfs.py
++++ b/procfs/procfs.py
+@@ -405,8 +405,6 @@ class interrupts:
+ 		return dict
+ 
+ 	def parse_affinity(self, irq):
+-		if os.getuid() != 0:
+-			return
+ 		try:
+ 			f = file("/proc/irq/%s/smp_affinity" % irq)
+ 			line = f.readline()
+-- 
+1.8.3.1
+

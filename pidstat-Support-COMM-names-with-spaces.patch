@@ -1,0 +1,35 @@
+From d2b197d585de99fec07ce78d4233eff4f32c350e Mon Sep 17 00:00:00 2001
+From: Arnaldo Carvalho de Melo <acme@redhat.com>
+Date: Mon, 15 Jun 2015 12:44:29 -0300
+Subject: [PATCH 7/7] pidstat: Support COMM names with spaces
+
+The load method was just splitting the fields using space as the
+separator, but since some COMM names started having spaces... We
+better use the () as the COMM "quotes", using spaces as the
+separator for the remaining fields.
+
+Reported-by: Luiz Capitulino <lcapitulino@redhat.com>
+Signed-off-by: Arnaldo Carvalho de Melo <acme@redhat.com>
+Signed-off-by: John Kacur <jkacur@redhat.com>
+---
+ procfs/procfs.py | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/procfs/procfs.py b/procfs/procfs.py
+index 6b4fd84f3171..0ed55af1c219 100755
+--- a/procfs/procfs.py
++++ b/procfs/procfs.py
+@@ -100,8 +100,9 @@ class pidstat:
+ 
+ 	def load(self, basedir = "/proc"):
+ 		f = open("%s/%d/stat" % (basedir, self.pid))
+-		fields = f.readline().strip().split()
++		fields = f.readline().strip().split(') ')
+ 		f.close()
++		fields = fields[0].split(' (') + fields[1].split()
+ 		self.fields = {}
+ 		nr_fields = min(len(fields), len(self.proc_stat_fields))
+ 		for i in range(nr_fields):
+-- 
+1.8.3.1
+
