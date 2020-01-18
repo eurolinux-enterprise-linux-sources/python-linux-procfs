@@ -2,7 +2,7 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2007 Red Hat, Inc.
+# Copyright (C) 2007-2015 Red Hat, Inc.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,29 +23,66 @@ import os, time, utilist
 VERSION="0.3"
 
 def process_cmdline(pid_info):
+	"""
+	Returns the process command line, if available in the given `process' class, if
+	not available, falls back to using the comm (short process name) in its pidstat key.
+	"""
 	if pid_info["cmdline"]:
 		return reduce(lambda a, b: a + " %s" % b, pid_info["cmdline"]).strip()
 
 	return pid_info["stat"]["comm"]
 
 class pidstat:
+	"""Provides a dictionary to access the fields in the per process /proc/PID/stat
+	   files.
+
+	   One can obtain the available fields asking for the keys of the dictionary, e.g.:
+
+		>>> p = procfs.pidstat(1)
+		>>> print p.keys()
+		['majflt', 'rss', 'cnswap', 'cstime', 'pid', 'session', 'startstack', 'startcode', 'cmajflt', 'blocked', 'exit_signal', 'minflt', 'nswap', 'environ', 'priority', 'state', 'delayacct_blkio_ticks', 'policy', 'rt_priority', 'ppid', 'nice', 'cutime', 'endcode', 'wchan', 'num_threads', 'sigcatch', 'comm', 'stime', 'sigignore', 'tty_nr', 'kstkeip', 'utime', 'tpgid', 'itrealvalue', 'kstkesp', 'rlim', 'signal', 'pgrp', 'flags', 'starttime', 'cminflt', 'vsize', 'processor']
+
+	   And then access the various process properties using it as a dictionary:
+
+		>>> print p['comm']
+		systemd
+		>>> print p['priority']
+		20
+		>>> print p['state']
+		S
+
+	   Please refer to the 'procfs(5)' man page, by using:
+
+		$ man 5 procfs
+
+	   To see information for each of the above fields, it is part of the
+           'man-pages' RPM package.
+	"""
+
+	# Entries with the same value, the one with a comment after it is the
+	# more recent, having replaced the other name in v4.1-rc kernel times.
 
 	PF_ALIGNWARN	 = 0x00000001
 	PF_STARTING	 = 0x00000002
 	PF_EXITING	 = 0x00000004
 	PF_EXITPIDONE	 = 0x00000008
 	PF_VCPU		 = 0x00000010
+	PF_WQ_WORKER	 = 0x00000020 # /* I'm a workqueue worker */
 	PF_FORKNOEXEC	 = 0x00000040
+	PF_MCE_PROCESS	 = 0x00000080 # /* process policy on mce errors */
 	PF_SUPERPRIV	 = 0x00000100
 	PF_DUMPCORE	 = 0x00000200
 	PF_SIGNALED	 = 0x00000400
 	PF_MEMALLOC	 = 0x00000800
+	PF_NPROC_EXCEEDED= 0x00001000 # /* set_user noticed that RLIMIT_NPROC was exceeded */
 	PF_FLUSHER	 = 0x00001000
 	PF_USED_MATH	 = 0x00002000
+	PF_USED_ASYNC	 = 0x00004000 # /* used async_schedule*(), used by module init */
 	PF_NOFREEZE	 = 0x00008000
 	PF_FROZEN	 = 0x00010000
 	PF_FSTRANS	 = 0x00020000
 	PF_KSWAPD	 = 0x00040000
+	PF_MEMALLOC_NOIO = 0x00080000 # /* Allocating memory without IO involved */
 	PF_SWAPOFF	 = 0x00080000
 	PF_LESS_THROTTLE = 0x00100000
 	PF_KTHREAD	 = 0x00200000
@@ -54,10 +91,13 @@ class pidstat:
 	PF_SPREAD_PAGE	 = 0x01000000
 	PF_SPREAD_SLAB	 = 0x02000000
 	PF_THREAD_BOUND	 = 0x04000000
+	PF_NO_SETAFFINITY = 0x04000000 # /* Userland is not allowed to meddle with cpus_allowed */
+	PF_MCE_EARLY	 = 0x08000000 # /* Early kill for mce process policy */
 	PF_MEMPOLICY	 = 0x10000000
 	PF_MUTEX_TESTER	 = 0x20000000
 	PF_FREEZER_SKIP	 = 0x40000000
 	PF_FREEZER_NOSIG = 0x80000000
+	PF_SUSPEND_TASK	 = 0x80000000 # /* this thread called freeze_processes and should not be frozen */
 
 	proc_stat_fields = [ "pid", "comm", "state", "ppid", "pgrp", "session",
 			     "tty_nr", "tpgid", "flags", "minflt", "cminflt",
@@ -81,13 +121,23 @@ class pidstat:
 	def keys(self):
 		return self.fields.keys()
 
+	def values(self):
+		return self.fields.values()
+
 	def has_key(self, fieldname):
 		return self.fields.has_key(fieldname)
 
+	def items(self):
+		return self.fields
+
+	def __contains__(self, fieldname):
+		return fieldname in self.fields
+
 	def load(self, basedir = "/proc"):
 		f = open("%s/%d/stat" % (basedir, self.pid))
-		fields = f.readline().strip().split()
+		fields = f.readline().strip().split(') ')
 		f.close()
+		fields = fields[0].split(' (') + fields[1].split()
 		self.fields = {}
 		nr_fields = min(len(fields), len(self.proc_stat_fields))
 		for i in range(nr_fields):
@@ -102,21 +152,97 @@ class pidstat:
 					self.fields[attrname] = value
 
 	def is_bound_to_cpu(self):
+		"""
+		Returns true if this process has a fixed smp affinity mask,
+                not allowing it to be moved to a different set of CPUs.
+		"""
 		return self.fields["flags"] & self.PF_THREAD_BOUND and \
 			True or False
 
 	def process_flags(self):
+		"""
+		Returns a list with all the process flags known, details depend
+		on kernel version, declared in the file include/linux/sched.h in
+		the kernel sources.
+
+		As of v4.2-rc7 these include (from include/linux/sched.h comments):
+
+			PF_EXITING	   Getting shut down
+			PF_EXITPIDONE	   Pi exit done on shut down
+			PF_VCPU		   I'm a virtual CPU
+			PF_WQ_WORKER	   I'm a workqueue worker
+			PF_FORKNOEXEC	   Forked but didn't exec
+			PF_MCE_PROCESS	   Process policy on mce errors
+			PF_SUPERPRIV	   Used super-user privileges
+			PF_DUMPCORE	   Dumped core
+			PF_SIGNALED	   Killed by a signal
+			PF_MEMALLOC	   Allocating memory
+			PF_NPROC_EXCEEDED  Set_user noticed that RLIMIT_NPROC was exceeded
+			PF_USED_MATH	   If unset the fpu must be initialized before use
+			PF_USED_ASYNC	   Used async_schedule*(), used by module init
+			PF_NOFREEZE	   This thread should not be frozen
+			PF_FROZEN	   Frozen for system suspend
+			PF_FSTRANS	   Inside a filesystem transaction
+			PF_KSWAPD	   I am kswapd
+			PF_MEMALLOC_NOIO   Allocating memory without IO involved
+			PF_LESS_THROTTLE   Throttle me less: I clean memory
+			PF_KTHREAD	   I am a kernel thread
+			PF_RANDOMIZE	   Randomize virtual address space
+			PF_SWAPWRITE	   Allowed to write to swap
+			PF_NO_SETAFFINITY  Userland is not allowed to meddle with cpus_allowed
+			PF_MCE_EARLY	   Early kill for mce process policy
+			PF_MUTEX_TESTER	   Thread belongs to the rt mutex tester
+			PF_FREEZER_SKIP	   Freezer should not count it as freezable
+			PF_SUSPEND_TASK	   This thread called freeze_processes and should not be frozen
+	
+		"""
 		sflags = []
 		for attr in dir(self):
 			if attr[:3] != "PF_":
 				continue
 			value = getattr(self, attr)
-			if value & self.flags:
+			if value & self.fields["flags"]:
 				sflags.append(attr)
 
 		return sflags
 
 class pidstatus:
+	"""
+	Provides a dictionary to access the fields in the per process /proc/PID/status
+	files. This provides additional information about processes and threads to what
+	can be obtained with the procfs.pidstat() class.
+
+	One can obtain the available fields asking for the keys of the dictionary, e.g.:
+
+		>>> import procfs
+		>>> p = procfs.pidstatus(1)
+		>>> print p.keys()
+		['VmExe', 'CapBnd', 'NSpgid', 'Tgid', 'NSpid', 'VmSize', 'VmPMD', 'ShdPnd', 'State', 'Gid', 'nonvoluntary_ctxt_switches', 'SigIgn', 'VmStk', 'VmData', 'SigCgt', 'CapEff', 'VmPTE', 'Groups', 'NStgid', 'Threads', 'PPid', 'VmHWM', 'NSsid', 'VmSwap', 'Name', 'SigBlk', 'Mems_allowed_list', 'VmPeak', 'Ngid', 'VmLck', 'SigQ', 'VmPin', 'Mems_allowed', 'CapPrm', 'Seccomp', 'VmLib', 'Cpus_allowed', 'Uid', 'SigPnd', 'Pid', 'Cpus_allowed_list', 'TracerPid', 'CapInh', 'voluntary_ctxt_switches', 'VmRSS', 'FDSize']
+		>>> print p["Pid"]
+		1
+		>>> print p["Threads"]
+		1
+		>>> print p["VmExe"]
+		1248 kB
+		>>> print p["Cpus_allowed"]
+		f
+		>>> print p["SigQ"]
+		0/30698
+		>>> print p["VmPeak"]
+		320300 kB
+		>>>
+
+	Please refer to the 'procfs(5)' man page, by using:
+
+		$ man 5 procfs
+
+	To see information for each of the above fields, it is part of the
+	'man-pages' RPM package.
+
+	In the man page there will be references to further documentation, like
+        referring to the "getrlimit(2)" man page when explaining the "SigQ"
+        line/field.
+	"""
 
 	def __init__(self, pid, basedir = "/proc"):
 		self.pid = pid
@@ -128,8 +254,17 @@ class pidstatus:
 	def keys(self):
 		return self.fields.keys()
 
+	def values(self):
+		return self.fields.values()
+
 	def has_key(self, fieldname):
 		return self.fields.has_key(fieldname)
+
+	def items(self):
+		return self.fields
+
+	def __contains__(self, fieldname):
+		return fieldname in self.fields
 
 	def load(self, basedir = "/proc"):
 		f = open("%s/%d/status" % (basedir, self.pid))
@@ -147,6 +282,12 @@ class pidstatus:
 		f.close()
 
 class process:
+	"""
+	Information about a process with a given pid, provides a dictionary with
+	two entries, instances of different wrappers for /proc/ process related
+	meta files: "stat" and "status", see the documentation for procfs.pidstat
+	and procfs.pidstatus for further info about those classes.
+	"""
 
 	def __init__(self, pid, basedir = "/proc"):
 		self.pid = pid
@@ -175,6 +316,9 @@ class process:
 	def has_key(self, attr):
 		return hasattr(self, attr)
 
+	def __contains__(self, attr):
+		return hasattr(self, attr)
+
 	def load_cmdline(self):
 		f = file("/proc/%d/cmdline" % self.pid)
 		self.cmdline = f.readline().strip().split('\0')[:-1]
@@ -196,6 +340,31 @@ class process:
 		f.close()
 
 	def load_environ(self):
+		"""
+		Loads the environment variables for this process. The entries then
+		become available via the 'environ' member, or via the 'environ'
+		dict key when accessing as p["environ"].
+
+		E.g.:
+
+
+		>>> all_processes = procfs.pidstats()
+		>>> firefox_pid = all_processes.find_by_name("firefox")
+		>>> firefox_process = all_processes[firefox_pid[0]]
+		>>> print firefox_process["environ"]["PWD"]
+		/home/acme
+		>>> print len(firefox_process.environ.keys())
+		66
+		>>> print firefox_process["environ"]["SHELL"]
+		/bin/bash
+		>>> print firefox_process["environ"]["USERNAME"]
+		acme
+		>>> print firefox_process["environ"]["HOME"]
+		/home/acme
+		>>> print firefox_process["environ"]["MAIL"]
+		/var/spool/mail/acme
+		>>>
+		"""
 		self.environ = {}
 		f = file("/proc/%d/environ" % self.pid)
 		for x in f.readline().split('\0'):
@@ -205,7 +374,13 @@ class process:
 		f.close()
 
 class pidstats:
+	"""
+	Provides access to all the processes in the system, to get a picture of
+	how many processes there are at any given moment.
 
+	The entries can be accessed as a dictionary, keyed by pid. Also there are
+	methods to find processes that match a given COMM or regular expression.
+	"""
 	def __init__(self, basedir = "/proc"):
 		self.basedir = basedir
 		self.processes = {}
@@ -224,10 +399,33 @@ class pidstats:
 	def keys(self):
 		return self.processes.keys()
 
+	def values(self):
+		return self.processes.values()
+
 	def has_key(self, key):
 		return self.processes.has_key(key)
 
+	def items(self):
+		return self.processes
+
+	def __contains__(self, key):
+		return key in self.processes
+
 	def reload(self):
+	"""
+	This operation will trow away the current dictionary contents, if any, and
+	read all the pid files from /proc/, instantiating a 'process' instance for
+	each of them.
+
+	This is a high overhead operation, and should be avoided if the perf python
+	binding can be used to detect when new threads appear and existing ones
+	terminate.
+
+	In RHEL it is found in the python-perf rpm package.
+
+	More information about the perf facilities can be found in the 'perf_event_open'
+	man page.
+	"""
 		del self.processes
 		self.processes = {}
 		pids = os.listdir(self.basedir)
@@ -334,9 +532,35 @@ class pidstats:
 		return priorities
 
 	def is_bound_to_cpu(self, pid):
+		"""
+		Checks if a given pid can't have its SMP affinity mask changed.
+		"""
 		return self.processes[pid]["stat"].is_bound_to_cpu()
 
 class interrupts:
+	"""
+	Information about IRQs in the system. A dictionary keyed by IRQ number
+	will have as its value another dictionary with "cpu", "type" and "users"
+	keys, with the SMP affinity mask, type of IRQ and the drivers associated
+	with each interrupt.
+
+	The information comes from the /proc/interrupts file, documented in
+	'man procfs(5)', for instance, the 'cpu' dict is an array with one entry
+	per CPU present in the sistem, each value being the number of interrupts
+	that took place per CPU.
+
+	E.g.:
+
+	>>> import procfs
+	>>> interrupts = procfs.interrupts()
+	>>> thunderbolt_irq = interrupts.find_by_user("thunderbolt")
+	>>> print thunderbolt_irq
+	34
+	>>> thunderbolt = interrupts[thunderbolt_irq]
+	>>> print thunderbolt
+	{'affinity': [0, 1, 2, 3], 'type': 'PCI-MSI', 'cpu': [3495, 0, 81, 0], 'users': ['thunderbolt']}
+	>>>
+	"""
 	def __init__(self):
 		self.interrupts = {}
 		self.reload()
@@ -347,8 +571,17 @@ class interrupts:
 	def keys(self):
 		return self.interrupts.keys()
 
+	def values(self):
+		return self.interrupts.values()
+
 	def has_key(self, key):
 		return self.interrupts.has_key(str(key))
+
+	def items(self):
+		return self.interrupts
+
+	def __contains__(self, key):
+		return str(key) in self.interrupts
 
 	def reload(self):
 		del self.interrupts
@@ -383,14 +616,12 @@ class interrupts:
 				dict["type"] = fields[self.nr_cpus]
 				# look if there are users (interrupts 3 and 4 haven't)
 				if nr_fields > self.nr_cpus + 1:
-					dict["users"] = [a.strip() for a in line[line.index(fields[self.nr_cpus + 1]):].split(',')]
+					dict["users"] = [a.strip() for a in fields[nr_fields - 1].split(',')]
 				else:
 					dict["users"] = []
 		return dict
 
 	def parse_affinity(self, irq):
-		if os.getuid() != 0:
-			return
 		try:
 			f = file("/proc/irq/%s/smp_affinity" % irq)
 			line = f.readline()
@@ -400,6 +631,21 @@ class interrupts:
 			return [ 0, ]
 
 	def find_by_user(self, user):
+		"""
+		Looks up a interrupt number by the name of one of its users"
+
+		E.g.:
+
+		>>> import procfs
+		>>> interrupts = procfs.interrupts()
+		>>> thunderbolt_irq = interrupts.find_by_user("thunderbolt")
+		>>> print thunderbolt_irq
+		34
+		>>> thunderbolt = interrupts[thunderbolt_irq]
+		>>> print thunderbolt
+		{'affinity': [0, 1, 2, 3], 'type': 'PCI-MSI', 'cpu': [3495, 0, 81, 0], 'users': ['thunderbolt']}
+		>>>
+		"""
 		for i in self.interrupts.keys():
 			if self.interrupts[i].has_key("users") and \
 			   user in self.interrupts[i]["users"]:
@@ -407,6 +653,21 @@ class interrupts:
 		return None
 
 	def find_by_user_regex(self, regex):
+		"""
+		Looks up a interrupt number by a regex that matches names of its users"
+
+		E.g.:
+
+		>>> import procfs
+		>>> import re
+		>>> interrupts = procfs.interrupts()
+		>>> usb_controllers = interrupts.find_by_user_regex(re.compile(".*hcd"))
+		>>> print usb_controllers
+		['22', '23', '31']
+		>>> print [ interrupts[irq]["users"] for irq in usb_controllers ]
+		[['ehci_hcd:usb4'], ['ehci_hcd:usb3'], ['xhci_hcd']]
+		>>>
+		"""
 		irqs = []
 		for i in self.interrupts.keys():
 			if not self.interrupts[i].has_key("users"):
@@ -418,6 +679,25 @@ class interrupts:
 		return irqs
 
 class cmdline:
+	"""
+	Parses the kernel command line (/proc/cmdline), turning it into a dictionary."
+
+	Useful to figure out if some kernel boolean knob has been turned on, as well
+	as to find the value associated to other kernel knobs.
+
+	It can also be used to find out about parameters passed to the init process,
+	such as 'BOOT_IMAGE', etc.
+
+	E.g.:
+	>>> import procfs
+	>>> kcmd = procfs.cmdline()
+	>>> print kcmd.keys()
+	['LANG', 'BOOT_IMAGE', 'quiet', 'rhgb', 'rd.lvm.lv', 'ro', 'root']
+	>>> print kcmd["BOOT_IMAGE"]
+	/vmlinuz-4.3.0-rc1+
+	>>>
+	"""
+
 	def __init__(self):
 		self.options = {}
 		self.parse()
@@ -433,7 +713,49 @@ class cmdline:
 
 		f.close()
 
+	def __getitem__(self, key):
+		return self.options[key]
+
+	def keys(self):
+		return self.options.keys()
+
+	def values(self):
+		return self.options.values()
+
+	def items(self):
+		return self.options
+
 class cpuinfo:
+	"""
+	Dictionary with information about CPUs in the system.
+
+	Please refer to 'man procfs(5)' for further information about the
+        '/proc/cpuinfo' file, that is the source of the information provided by this
+        class. The 'man lscpu(1)' also has information about a program that uses
+	the '/proc/cpuinfo' file.
+
+	Using this class one can obtain the number of CPUs in a system:
+
+	  >>> cpus = procfs.cpuinfo()
+          >>> print cpus.nr_cpus
+          4
+
+	It is also possible to figure out aspects of the CPU topology, such as
+	how many CPU physical sockets exists, i.e. groups of CPUs sharing components
+	such as CPU memory caches:
+
+	  >>> print len(cpus.sockets)
+	  1
+
+	Additionally dictionary with information common to all CPUs in the system is
+	available:
+
+	  >>> print cpus["model name"]
+          Intel(R) Core(TM) i7-3667U CPU @ 2.00GHz
+          >>> print cpus["cache size"]
+          4096 KB
+          >>>
+	"""
 	def __init__(self, filename="/proc/cpuinfo"):
 		self.tags = {}
 		self.nr_cpus = 0
@@ -445,6 +767,12 @@ class cpuinfo:
 
 	def keys(self):
 		return self.tags.keys()
+
+	def values(self):
+		return self.tags.values()
+
+	def items(self):
+		return self.tags
 
 	def parse(self, filename):
 		f = file(filename)
@@ -471,6 +799,15 @@ class cpuinfo:
 		self.nr_cores = ("cpu cores" in self.tags and int(self.tags["cpu cores"]) or 1) * self.nr_sockets
 
 class smaps_lib:
+	"""
+	Representation of an mmap in place for a process. Can be used to figure
+	out which processes have an library mapped, etc.
+
+	The 'perm' member can be used to figure out executable mmaps, i.e. libraries.
+
+	The 'vm_start' and 'vm_end' in turn can be used when trying to resolve
+	processor instruction pointer addresses to a symbol name in a library.
+	"""
 	def __init__(self, lines):
 		fields = lines[0].split()
 		self.vm_start, self.vm_end = map(lambda a: int(a, 16), fields[0].split("-"))
@@ -498,8 +835,38 @@ class smaps_lib:
 	def keys(self):
 		return self.tags.keys()
 
+	def values(self):
+		return self.tags.values()
+
+	def items(self):
+		return self.tags
+
 
 class smaps:
+	"""
+	List of libraries mapped by a process. Parses the lines in
+	the /proc/PID/smaps file, that is further documented in the
+	procfs(5) man page.
+
+	Example: Listing the executable maps for the 'sshd' process:
+
+          >>> import procfs
+          >>> processes = procfs.pidstats()
+          >>> sshd = processes.find_by_name("sshd")
+          >>> sshd_maps = procfs.smaps(sshd[0])
+          >>> for i in range(len(sshd_maps)):
+          ...     if 'x' in sshd_maps[i].perms:
+          ...         print "%s: %s" % (sshd_maps[i].name, sshd_maps[i].perms)
+          ...
+          /usr/sbin/sshd: r-xp
+          /usr/lib64/libnss_files-2.20.so: r-xp
+          /usr/lib64/librt-2.20.so: r-xp
+          /usr/lib64/libkeyutils.so.1.5: r-xp
+          /usr/lib64/libkrb5support.so.0.1: r-xp
+          /usr/lib64/libfreebl3.so: r-xp
+          /usr/lib64/libpthread-2.20.so: r-xp
+	  ...
+	"""
 	def __init__(self, pid):
 		self.pid = pid
 		self.entries = []
@@ -524,6 +891,12 @@ class smaps:
 		self.entries.append(smaps_lib(lines))
 		return line
 
+	def __len__(self):
+		return len(self.entries)
+
+	def __getitem__(self, index):
+		return self.entries[index]
+
 	def reload(self):
 		f = file("/proc/%d/smaps" % self.pid)
 		line = None
@@ -544,6 +917,12 @@ class smaps:
 		return result
 
 class cpustat:
+	"""
+	CPU statistics, obtained from a line in the '/proc/stat' file, Please
+	refer to 'man procfs(5)' for further information about the '/proc/stat'
+	file, that is the source of the information provided by this class.
+	"""
+
 	def __init__(self, fields):
 		self.name = fields[0]
 		(self.user,
@@ -558,7 +937,23 @@ class cpustat:
 			if len(fields) > 8:
 				self.guest = int(fields[8])
 
+	def __repr__(self):
+		s = "< user: %s, nice: %s, system: %s, idle: %s, iowait: %s, irq: %s, softirq: %s" % \
+			(self.user, self.nice, self.system, self.idle, self.iowait, self.irq, self.softirq)
+		if hasattr(self, 'steal'):
+			s += ", steal: %d" % self.steal
+		if hasattr(self, 'guest'):
+			s += ", guest: %d" % self.guest
+		return s + ">"
+
 class cpusstats:
+	"""
+	Dictionary with information about CPUs in the system. First entry in the
+	dictionary gives an aggregate view of all CPUs, each other entry is about
+	separate CPUs. Please refer to 'man procfs(5)' for further information
+	about the '/proc/stat' file, that is the source of the information provided
+	by this class.
+	"""
 	def __init__(self, filename = "/proc/stat"):
 		self.entries = {}
 		self.time = None
@@ -577,6 +972,12 @@ class cpusstats:
 
 	def keys(self):
 		return self.entries.keys()
+
+	def values(self):
+		return self.entries.values()
+
+	def items(self):
+		return self.entries
 
 	def reload(self):
 		last_entries = self.entries

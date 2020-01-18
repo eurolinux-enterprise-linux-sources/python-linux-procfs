@@ -2,20 +2,15 @@
 %{!?python_ver: %define python_ver %(%{__python} -c "import sys ; print sys.version[:3]")}
 
 Name: python-linux-procfs
-Version: 0.4.6
+Version: 0.4.9
 Release: 3%{?dist}
 License: GPLv2
 Summary: Linux /proc abstraction classes
 Group: System Environment/Libraries
 Source: http://userweb.kernel.org/~acme/python-linux-procfs/%{name}-%{version}.tar.bz2
 
-Patch1: procfs-Add-a-__contains__-method-to-dict-classes.patch
-Patch2: pidstat-Add-PF_NO_SETAFFINITY-const.patch
-Patch3: interrupts-Do-not-refrain-from-parsing-the-irq-affin.patch
-Patch4: pidstat-Fix-process_flags-method.patch
-Patch5: pidstat-Add-missing-PF_-flags.patch
-Patch6: pflags-Add-command-line-utility-to-print-processor-f.patch
-Patch7: pidstat-Support-COMM-names-with-spaces.patch
+Patch1: pidstats-fix-documentation-indentation.patch
+Patch2: fix-parse_affinity-for-CPU-numbers-greater-than-31.patch
 
 URL: http://userweb.kernel.org/~acme/python-linux-procfs
 BuildArch: noarch
@@ -29,11 +24,6 @@ Abstractions to extract information from the Linux kernel /proc files.
 %setup -q
 %patch1 -p1
 %patch2 -p1
-%patch3 -p1
-%patch4 -p1
-%patch5 -p1
-%patch6 -p1
-%patch7 -p1
 
 %build
 %{__python} setup.py build
@@ -58,6 +48,19 @@ rm -rf %{buildroot}
 %doc COPYING
 
 %changelog
+* Wed Aug 24 2016 John Kacur <jkacur@redhat.com> - 0.4.9-3
+- fix parse_affinity for CPU numbers greater than 31
+Resolves: rhbz#1365902
+
+* Tue Jul 05 2016 John Kacur <jkacur@redhat.com> - 0.4.9-2
+- Rebuild for rhel-7.3
+Resolves: rhbz#1245677
+
+* Fri Nov 20 2015 John Kacur <jkacur@redhat.com> - 0.4.9-1
+- update to v0.4.9
+- Add pidstats-fix-documentation-indentation.patch
+Resolves: rhbz#1235826
+
 * Thu Jun 25 2015 John Kacur <jkacur@redhat.com> - 0.4.6-3
 - procfs-Add-a-__contains__-method-to-dict-classes.patch
 - pidstat-Add-PF_NO_SETAFFINITY-const.patch
