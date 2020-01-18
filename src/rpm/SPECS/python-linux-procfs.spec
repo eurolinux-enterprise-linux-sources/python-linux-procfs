@@ -2,13 +2,13 @@
 %{!?python_ver: %define python_ver %(%{__python} -c "import sys ; print sys.version[:3]")}
 
 Name: python-linux-procfs
-Version: 0.4.11
+Version: 0.4.6
 Release: 1%{?dist}
 License: GPLv2
 Summary: Linux /proc abstraction classes
 Group: System Environment/Libraries
-Source: https://cdn.kernel.org/pub/software/libs/python/%{name}/%{name}-%{version}.tar.xz
-URL: https://rt.wiki.kernel.org/index.php/Tuna
+Source: http://userweb.kernel.org/~acme/python-linux-procfs/%{name}-%{version}.tar.bz2
+URL: http://userweb.kernel.org/~acme/python-linux-procfs
 BuildArch: noarch
 BuildRequires: python-devel
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
@@ -25,15 +25,12 @@ Abstractions to extract information from the Linux kernel /proc files.
 %install
 rm -rf %{buildroot}
 %{__python} setup.py install --skip-build --root %{buildroot}
-mkdir -p %{buildroot}%{_bindir}
-cp pflags-cmd.py %{buildroot}%{_bindir}/pflags
 
 %clean
 rm -rf %{buildroot}
 
 %files
 %defattr(0755,root,root,0755)
-%{_bindir}/pflags
 %{python_sitelib}/procfs/
 %defattr(0644,root,root,0755)
 %if "%{python_ver}" >= "2.5"
@@ -42,28 +39,6 @@ rm -rf %{buildroot}
 %doc COPYING
 
 %changelog
-* Tue Sep 26 2017 Jiri Kastner <jkastner@redhat.com> - 0.4.11-1
-- fixed rpmlint compliants (url, source)
-
-* Thu Dec 22 2016 Jiri Kastner <jkastner@redhat.com> - 0.4.10-1
-- fixed affinity parsing with cpu numbers greater than 31
-- added test for fix above
-
-* Thu Oct  8 2015 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.9-1
-- Adds documentations to classes, more work to do on methods
-- Fixes parsing of users in /proc/interrupts users field
-- Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1245677
-
-* Tue Jun 23 2015 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.8-1
-- Support spaces in COMM names
-- Fixes: https://bugzilla.redhat.com/show_bug.cgi?id=1232394
-
-* Thu Jun 11 2015 Arnaldo Carvalho de Melo <acme@redhat.com> - 0.4.7-1
-- Fix pidstat.process_flag()
-- Introduce pflags utility
-- Parse IRQ affinities for !root
-- Add PF_NO_SETAFFINITY const
-
 * Wed Jun  5 2013 Jiri Kastner <jkastner@redhat.com> - 0.4.6-1
 - support for parsing cgroups
 - support for parsing environ variables

@@ -37,14 +37,18 @@ def hexbitmask(l, nr_entries):
 	return hexbitmask
 
 def bitmasklist(line, nr_entries):
-	hexmask = line.strip().replace(",", "")
+	fields = line.strip().split(",")
 	bitmasklist = []
 	entry = 0
-	bitmask = bin(int(hexmask, 16))[2::]
-	for i in reversed(bitmask):
-		if int(i) & 1:
-			bitmasklist.append(entry)
-		entry +=1
+	for i in range(len(fields) - 1, -1, -1):
+		mask = int(fields[i], 16)
+		while mask != 0:
+			if mask & 1:
+				bitmasklist.append(entry)
+			mask >>= 1
+			entry += 1
+			if entry == nr_entries:
+				break
 		if entry == nr_entries:
 			break
 	return bitmasklist
