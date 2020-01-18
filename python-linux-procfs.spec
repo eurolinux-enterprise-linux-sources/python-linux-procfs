@@ -3,16 +3,20 @@
 
 Name: python-linux-procfs
 Version: 0.4.9
-Release: 3%{?dist}
+Release: 4%{?dist}
 License: GPLv2
 Summary: Linux /proc abstraction classes
 Group: System Environment/Libraries
-Source: http://userweb.kernel.org/~acme/python-linux-procfs/%{name}-%{version}.tar.bz2
 
+URL: https://git.kernel.org/pub/scm/libs/python/python-linux-procfs/python-linux-procfs.git
+# If upstream does not provide tarballs, to generate
+# git clone git://git.kernel.org/pub/scm/libs/python/python-linux-procfs/python-linux-procfs.git
+# cd python-linux-procfs
+# git archive --format=tar --prefix=python-linux-procfs-%%{version}/ v%%{version} | bzip2 -c > python-linux-procfs-%%{version}.tar.bz2
+Source: https://git.kernel.org/pub/scm/libs/python/python-linux-procfs/python-linux-procfs.git/snapshot/%{name}-%{version}.tar.bz2
 Patch1: pidstats-fix-documentation-indentation.patch
 Patch2: fix-parse_affinity-for-CPU-numbers-greater-than-31.patch
 
-URL: http://userweb.kernel.org/~acme/python-linux-procfs
 BuildArch: noarch
 BuildRequires: python-devel
 BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
@@ -48,6 +52,10 @@ rm -rf %{buildroot}
 %doc COPYING
 
 %changelog
+* Thu May 31 2018 John Kacur <jkacur@redhat.com> - 0.4.9-4
+- Fix upstream URL reference and source
+Resolves: rhbz#1583961
+
 * Wed Aug 24 2016 John Kacur <jkacur@redhat.com> - 0.4.9-3
 - fix parse_affinity for CPU numbers greater than 31
 Resolves: rhbz#1365902
